@@ -2,76 +2,212 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Brain Scroll — Video Scrub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Arjun Bedi — Interactive CV</title>
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
-  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  :root{
+    /* Typography */
+    --font: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --h1: clamp(28px, 5vw, 60px);
+    --p:  clamp(16px, 2.2vw, 22px);
+    --weight-title: 700; --weight-body: 500;
+    --text: #fff; --muted:#c8c8c8; --shadow: 0 2px 24px rgba(0,0,0,.55);
+
+    /* Layout / feel */
+    --scrollerHeight: 700vh;                  /* bigger = slower scroll */
+    --fadeMs: 180;                             /* fade speed */
+    --gutter: max(4vw, calc(16px + env(safe-area-inset-left)));
+    --bottom: max(6vh, calc(24px + env(safe-area-inset-bottom)));
+  }
+
+  html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:var(--font)}
   #wrap{position:fixed;inset:0;display:grid;place-items:center}
-  video{width:100vw;height:100vh;object-fit:contain;background:#000}
-  .scroller{height:500vh} /* bigger = slower/smoother; try 800vh if you want */
-  .overlay{position:fixed;max-width:min(90ch,90vw);opacity:0;transition:opacity .25s ease;pointer-events:none}
+  video{width:100vw;height:100svh;object-fit:contain;background:#000}
+  .scroller{height:var(--scrollerHeight);touch-action:pan-y}
+
+  .overlay{
+    position:fixed; max-width:min(90ch,90vw);
+    opacity:0; transition:opacity var(--fadeMs)ms ease;
+    pointer-events:none; filter:drop-shadow(var(--shadow));
+  }
   .overlay.show{opacity:1}
-  .pos-left{left:4vw;top:15vh;text-align:left;font:600 2rem/1.25 system-ui}
-  .pos-right{right:4vw;top:15vh;text-align:right;font:600 2rem/1.25 system-ui}
-  .pos-bottom{left:50%;transform:translateX(-50%);bottom:6vh;text-align:center;font:600 1.5rem/1.3 system-ui}
+  .overlay h1{margin:0 0 .35em;font-weight:var(--weight-title);font-size:var(--h1);line-height:1.05}
+  .overlay p, .overlay li{margin:0 0 .35em;font-weight:var(--weight-body);font-size:var(--p);line-height:1.35}
+  .overlay ul{margin:.25em 0 0 1.1em;padding:0}
+
+  /* Positions */
+  .pos-left{left:var(--gutter);top:15vh;text-align:left}
+  .pos-right{right:var(--gutter);top:15vh;text-align:right}
+  .pos-center{left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
+  .pos-bottom{left:50%;transform:translateX(-50%);bottom:var(--bottom);text-align:center}
+  @media (max-width:640px){ .pos-left,.pos-right{top:12vh} }
 </style>
 </head>
 <body>
-  <div id="wrap">
-    <!-- Keep muted+playsinline to avoid mobile autoplay restrictions -->
-    <video id="vid" muted playsinline preload="auto" src="brain.mp4"></video>
-  </div>
 
-  <!-- CV overlays (edit these) -->
-  <div id="ov1" class="overlay pos-left"> <h1>Frontal</h1><p>CV bullets here…</p></div>
-  <div id="ov2" class="overlay pos-right"><h1>Temporal</h1><p>More text…</p></div>
-  <div id="ov3" class="overlay pos-bottom"><h1>Wrap-up</h1><p>Contact • CTA</p></div>
+<div id="wrap">
+  <!-- Make sure the file is at the repo root and named exactly brain.mp4 -->
+  <video id="vid" muted playsinline preload="auto" src="brain.mp4"></video>
+</div>
 
-  <div class="scroller"></div>
+<div id="overlays"></div>
+<div class="scroller"></div>
 
 <script>
-/* ======= CONFIG (edit these) ======= */
-// show text between these scroll percentages (0..1)
-const sections = [
-  {el: '#ov1', start: 0.12, end: 0.22},   // 12%–22% of the scroll
-  {el: '#ov2', start: 0.40, end: 0.52},   // 40%–52%
-  {el: '#ov3', start: 0.75, end: 0.90}    // 75%–90%
+/* ===================== CONFIG ===================== */
+/* your video has 0001–0838 → 838 frames total */
+const TOTAL_FRAMES       = 838;  // change if your video length differs
+const SHOW_WIDTH_FRAMES  = 6;    // half-window around each trigger (0 = single frame)
+const SCROLLER_VH        = 700;  // page height → scroll speed
+
+// Triggers (center frames you gave)
+const TRIG = {
+  intro:       0,
+  frontal:     99,
+  parietal:    179,
+  occipital:   264,
+  temporal:    360,
+  cerebellum:  519,
+  brainstem:   629,
+  closeout:    695           // set INCLUDE_CLOSE=false to hide
+};
+
+// include the final contact card?
+const INCLUDE_CLOSE = true;
+
+/* ====== Overlay content (edit copy / formatting here) ====== */
+const CARDS = [
+  // Intro: left + right together at frame 0
+  { pos:'left',  frame: TRIG.intro, html:`<h1>Arjun Bedi</h1><p class="muted">Ottawa, ON • Interactive CV</p>` },
+  { pos:'right', frame: TRIG.intro, html:`<h1>Interactive CV</h1><p class="muted">scroll to explore</p>` },
+
+  // Frontal — Research & planning
+  { pos:'left', frame: TRIG.frontal, html: `
+    <h1>Frontal — Research & Planning</h1>
+    <ul>
+      <li>Directed Research Student, <em>VisCoRe Lab</em> (Fall 2025)</li>
+      <li>Visual token variation &amp; biological motion: design → testing → analysis → write-up</li>
+    </ul>` },
+
+  // Parietal — Quant & methods
+  { pos:'right', frame: TRIG.parietal, html: `
+    <h1>Parietal — Quant & Methods</h1>
+    <ul>
+      <li>R &amp; SPSS (ANOVA, regression)</li>
+      <li>Research Methods • Statistics • Cognitive/Perception coursework</li>
+    </ul>` },
+
+  // Occipital — Vision & design
+  { pos:'left', frame: TRIG.occipital, html: `
+    <h1>Occipital — Vision & Design</h1>
+    <ul>
+      <li>Visual cognition focus; Blender for visualization</li>
+    </ul>` },
+
+  // Temporal — Clinical & communication
+  { pos:'right', frame: TRIG.temporal, html: `
+    <h1>Temporal — Clinical & Communication</h1>
+    <ul>
+      <li>Instructor Therapist, Aspen ABA (Jan–Apr 2024)</li>
+      <li>Volunteer, Memory Care (Jan 2024–present)</li>
+      <li>Languages: English • Hindi • Punjabi</li>
+    </ul>` },
+
+  // Cerebellum — Care, coordination & discipline
+  { pos:'left', frame: TRIG.cerebellum, html: `
+    <h1>Cerebellum — Care & Coordination</h1>
+    <ul>
+      <li>Behavioural Counsellor, Bairncroft (Mar 2025–present)</li>
+      <li>Rugby: Kingston Panthers • Ottawa Irish; former football</li>
+    </ul>` },
+
+  // Brainstem — Core facts
+  { pos:'right', frame: TRIG.brainstem, html: `
+    <h1>Brainstem — Core Facts</h1>
+    <ul>
+      <li>Honours B.A. Psychology, uOttawa (exp. May 2026)</li>
+      <li>Upper-Year GPA 8.3/10; CGPA 7.1/10 (proj. 7.5)</li>
+    </ul>` },
 ];
-/* =================================== */
+
+// Optional close-out card
+if (INCLUDE_CLOSE){
+  CARDS.push({
+    pos:'bottom', frame: TRIG.closeout,
+    html:`<h1>Contact</h1><p>bediarj02@gmail.com • +1 (###) ###-####</p>`
+  });
+}
+/* ================================================== */
+
+document.documentElement.style.setProperty('--scrollerHeight', SCROLLER_VH + 'vh');
 
 const vid = document.getElementById('vid');
-const overlays = sections.map(s => ({...s, node: document.querySelector(s.el)}));
+const overlaysRoot = document.getElementById('overlays');
 
-function scrollT(){
-  const max = document.body.scrollHeight - innerHeight;
-  return max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+// Convert a frame index to time (sec) once metadata is known
+let duration = 0;
+const fToTime = f => (duration ? (f / (TOTAL_FRAMES - 1)) * duration : 0);
+
+// Build overlay nodes
+const overlays = CARDS.map(card => {
+  const el = document.createElement('div');
+  el.className = `overlay pos-${card.pos}`;
+  el.innerHTML = card.html;
+  overlaysRoot.appendChild(el);
+  return {
+    el,
+    centerF: card.frame,
+    startF: Math.max(0, card.frame - SHOW_WIDTH_FRAMES),
+    endF:   Math.min(TOTAL_FRAMES-1, card.frame + SHOW_WIDTH_FRAMES)
+  };
+});
+
+function scrollPercent(){
+  const max = document.body.scrollHeight - window.innerHeight;
+  return max>0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
 }
 
-async function ready(){
-  if (vid.readyState >= 1) return; // HAVE_METADATA
-  await new Promise(r => vid.addEventListener('loadedmetadata', r, {once:true}));
+let metaReady = false;
+function onMeta(){ metaReady = true; duration = vid.duration || 0; paintFirstFrame(); }
+if (vid.readyState >= 1) onMeta(); else vid.addEventListener('loadedmetadata', onMeta, {once:true});
+
+function paintFirstFrame(){
+  try{ vid.currentTime = 0.001; }catch(e){}
+  vid.pause();
 }
 
-// Throttled scroll → set currentTime based on scroll %
+// Throttled scroll → set currentTime, toggle overlays
 let ticking = false;
-addEventListener('scroll', () => {
+window.addEventListener('scroll', () => {
   if (!ticking){
     requestAnimationFrame(() => {
-      const t = scrollT();
-      const dur = vid.duration || 0;
-      if (dur) vid.currentTime = t * (dur - 0.001); // avoid hitting exactly the end
-      overlays.forEach(s => s.node.classList.toggle('show', t >= s.start && t <= s.end));
+      const t = scrollPercent();
+      if (metaReady && duration){
+        const targetTime = t * Math.max(duration - 0.001, 0);
+        vid.currentTime = targetTime;
+
+        // compute current frame for crisp frame-window logic
+        const currF = Math.round((targetTime / duration) * (TOTAL_FRAMES - 1));
+
+        overlays.forEach(o => {
+          const on = currF >= o.startF && currF <= o.endF;
+          o.el.classList.toggle('show', on);
+        });
+      }
       ticking = false;
     });
     ticking = true;
   }
 }, {passive:true});
 
-// Kick off
-ready().then(() => {
-  // draw first frame (Safari sometimes needs a tiny seek)
-  if (vid.duration) { vid.currentTime = 0.001; }
-});
+// iOS URL-bar changes handled by 100svh in CSS
+window.addEventListener('resize', () => {});
 </script>
 </body>
 </html>
+
+
