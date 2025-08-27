@@ -51,6 +51,15 @@
   .pos-center{ left:50%; top:calc(50% + 38vh); transform:translate(-50%,-50%); text-align:center }
 
   @media (max-width:720px){
+    :root{ /* ADDED: mobile-safe insets */
+      --side:   max(4vw, 16px);
+      --gutter: 18vw;
+      --top:    10vh;
+      --bottom: 12vh;
+    }
+    .overlay h1{ font-size: clamp(22px, 6.2vw, 34px); line-height: 1.2; }      /* ADDED */
+    .overlay p, .overlay li{ font-size: clamp(14px, 4.4vw, 18px); line-height: 1.5; } /* ADDED */
+
     .pos-right{right:auto; left:var(--side)}
     .pos-bottom{left:50%}
   }
@@ -70,6 +79,8 @@
 const TOTAL_FRAMES = 838;
 const BASE_FADE    = 24;
 const SCROLLER_VH  = 700;
+const MOBILE_VH    = 900;               // ADDED
+const MOBILE_BP    = 720;               // ADDED
 
 const TRIG = {
   intro:       0,
@@ -90,6 +101,9 @@ const TRIG = {
    wider: true               (slightly increase column width while keeping safe gutter)
    startAtF: number          (opacity = 0 before this frame)
    persist: true             (stick at 1 after fading in)
+   dxPx: number              (ADDED: +/- px nudge; + = toward center)
+   widthPct: 0.3..1.0        (ADDED: fraction of column width; default 1)
+   maxWidthPx: number        (ADDED: hard cap on width)
 */
 const CARDS = [
   // Intro — lower middle, both sides
@@ -206,8 +220,12 @@ const CARDS = [
     html:`<p>bediarj02@gmail.com • abedi087@uottawa.ca • (613) 883-3843</p>` }
 ];
 
-document.documentElement.style.setProperty('--scrollerHeight', SCROLLER_VH + 'vh');
-/* ===================================== */
+/* ADDED: mobile-aware scroller height */
+function updateScrollerHeight(){
+  const mobile = window.innerWidth < MOBILE_BP;
+  document.documentElement.style.setProperty('--scrollerHeight', (mobile ? MOBILE_VH : SCROLLER_VH) + 'vh');
+}
+updateScrollerHeight();
 
 const vid = document.getElementById('vid');
 const overlaysRoot = document.getElementById('overlays');
@@ -219,7 +237,7 @@ const overlays = CARDS.map(card => {
   el.className = `overlay pos-${card.pos}`;
   el.innerHTML = card.html;
   overlaysRoot.appendChild(el);
-  return { el, ...card };
+  return { el, dxPx:0, widthPct:1, ...card }; // ADDED defaults
 });
 
 /* Helpers */
@@ -232,8 +250,8 @@ function scrollPercent(){
 function fitOverlay(o){
   // Keep top/center/bottom overlays exactly where CSS puts them (no scaling/relayout)
   if (o.pos === 'center' || o.pos === 'top' || o.pos === 'bottom'){
-    o.el.style.transform = '';     // let the class transform apply
-    o.el.style.maxWidth = '90ch';  // sensible width cap for readability
+    o.el.style.transform = '';     
+    o.el.style.maxWidth = '90ch';  
     return;
   }
 
@@ -245,7 +263,7 @@ function fitOverlay(o){
 
   const minGutter = Math.max(100, vw*0.06);
   let gutter = Math.max(minGutter, baseGutter - (o.gutterShiftPx||0));
-  if (o.wider) gutter = Math.max(minGutter, gutter * 0.85); // widen a bit but keep safe
+  if (o.wider) gutter = Math.max(minGutter, gutter * 0.85);
 
   const mid = vw/2;
   const safe = (o.pos === 'right')
@@ -255,22 +273,29 @@ function fitOverlay(o){
   const colW = Math.max(260, safe.right - safe.left);
   const colH = Math.max(180, vh - insetTop - insetBot);
 
-  // Horizontal anchor
+  /* ADDED: per-card width controls */
+  const pct = (o.widthPct==null) ? 1 : Math.max(0.3, Math.min(o.widthPct, 1));
+  let desiredW = colW * pct;
+  if (o.maxWidthPx) desiredW = Math.min(desiredW, o.maxWidthPx);
+
+  // Horizontal anchor with dxPx nudge (+ toward center)
+  const nudge = o.dxPx || 0; // ADDED
   if (o.pos === 'right'){
+    const baseRight = vw - safe.right;
     o.el.style.left  = '';
-    o.el.style.right = `${vw - safe.right}px`;
+    o.el.style.right = `${Math.max(0, baseRight - nudge)}px`; // subtract = toward center
   } else {
-    o.el.style.left  = `${safe.left}px`;
+    o.el.style.left  = `${safe.left + nudge}px`;
     o.el.style.right = '';
   }
 
-  // Reset scale to measure natural size
+  // Reset scale to measure natural size at desired width
   o.el.style.transform = 'scale(1)';
-  o.el.style.maxWidth = `${colW}px`;
+  o.el.style.maxWidth = `${Math.round(desiredW)}px`;
   const r = o.el.getBoundingClientRect();
 
-  // Scale factor to fit both width & height
-  const s = Math.max(0.60, Math.min(colW / r.width, colH / r.height, 1));
+  // Scale to fit height if needed (unchanged behavior)
+  const s = Math.max(0.60, Math.min(desiredW / r.width, colH / r.height, 1));
   o.el.style.transform = `scale(${s})`;
 
   // Vertical anchor: top or centered (with optional nudge)
@@ -331,10 +356,15 @@ addEventListener('scroll', () => {
   }
 }, {passive:true});
 
-addEventListener('resize', () => overlays.forEach(o => fitOverlay(o)));
+/* ADDED: update scroller height on resize */
+addEventListener('resize', () => {
+  updateScrollerHeight();
+  overlays.forEach(o => fitOverlay(o));
+});
 </script>
 </body>
 </html>
+
 
 
 
