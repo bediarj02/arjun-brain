@@ -6,13 +6,16 @@
 <title>Arjun Bedi — Interactive CV</title>
 
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Existing Inter (kept; unused but harmless) -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- NEW: EB Garamond for the Apple Garamond look -->
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
 
 <style>
   :root{
-    /* Apple-like type */
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display","SF Pro Text",
-            "Helvetica Neue", Helvetica, Arial, Inter, sans-serif;
+    /* Apple Garamond vibe (EB Garamond) */
+    --font: "EB Garamond", Garamond, "Times New Roman", serif;
+
     --h1: clamp(26px, 4vw, 44px);
     --h2: clamp(16px, 2vw, 20px);
     --p:  clamp(14px, 1.7vw, 18px);
@@ -36,7 +39,8 @@
     position:fixed; opacity:0; pointer-events:none; filter:drop-shadow(var(--shadow));
     text-align:left; transform-origin: top left;
   }
-  .overlay h1{margin:0 0 .35em;font-weight:700;font-size:var(--h1);line-height:1.14}
+  /* Keep your sizes; add subtle Apple-like tracking */
+  .overlay h1{margin:0 0 .35em;font-weight:700;font-size:var(--h1);line-height:1.14; letter-spacing:.01em}
   .overlay .mini{margin:.1em 0 .5em;font-weight:600;font-size:var(--h2);color:#eaeaea}
   .overlay p,.overlay li{margin:0 0 .35em;font-weight:500;font-size:var(--p);line-height:1.45}
   .overlay ul{margin:.25em 0 0 1.1em;padding:0}
@@ -51,15 +55,14 @@
   .pos-center{ left:50%; top:calc(50% + 38vh); transform:translate(-50%,-50%); text-align:center }
 
   @media (max-width:720px){
-    :root{ /* ADDED: mobile-safe insets */
+    :root{
       --side:   max(4vw, 16px);
       --gutter: 18vw;
       --top:    10vh;
       --bottom: 12vh;
     }
-    .overlay h1{ font-size: clamp(22px, 6.2vw, 34px); line-height: 1.2; }      /* ADDED */
-    .overlay p, .overlay li{ font-size: clamp(14px, 4.4vw, 18px); line-height: 1.5; } /* ADDED */
-
+    .overlay h1{ font-size: clamp(22px, 6.2vw, 34px); line-height: 1.2; }
+    .overlay p, .overlay li{ font-size: clamp(14px, 4.4vw, 18px); line-height: 1.5; }
     .pos-right{right:auto; left:var(--side)}
     .pos-bottom{left:50%}
   }
@@ -79,8 +82,8 @@
 const TOTAL_FRAMES = 838;
 const BASE_FADE    = 24;
 const SCROLLER_VH  = 700;
-const MOBILE_VH    = 900;               // ADDED
-const MOBILE_BP    = 720;               // ADDED
+const MOBILE_VH    = 900;               // mobile: slower scroll
+const MOBILE_BP    = 720;
 
 const TRIG = {
   intro:       0,
@@ -90,20 +93,20 @@ const TRIG = {
   temporal:    365,
   cerebellum:  519,
   brainstem:   629,
-  contact:     691 // contact begins here (per your request)
+  contact:     691 // contact begins here
 };
 
 /* Card options:
    pos: 'left' | 'right' | 'bottom' | 'top' | 'center'
-   v: 'top' | 'mid'          (vertical anchor; 'mid' centers the card vertically)
-   dyVh: number              (extra vertical nudge in vh; + pushes lower)
-   gutterShiftPx: number     (moves toward center by shrinking the gutter)
-   wider: true               (slightly increase column width while keeping safe gutter)
-   startAtF: number          (opacity = 0 before this frame)
-   persist: true             (stick at 1 after fading in)
-   dxPx: number              (ADDED: +/- px nudge; + = toward center)
-   widthPct: 0.3..1.0        (ADDED: fraction of column width; default 1)
-   maxWidthPx: number        (ADDED: hard cap on width)
+   v: 'top' | 'mid'
+   dyVh: number
+   gutterShiftPx: number
+   wider: true
+   startAtF: number
+   persist: true
+   dxPx: number             // nudge toward center if positive
+   widthPct: 0.3..1.0       // fraction of column width
+   maxWidthPx: number       // hard width cap
 */
 const CARDS = [
   // Intro — lower middle, both sides
@@ -220,7 +223,7 @@ const CARDS = [
     html:`<p>bediarj02@gmail.com • abedi087@uottawa.ca • (613) 883-3843</p>` }
 ];
 
-/* ADDED: mobile-aware scroller height */
+/* Mobile-aware scroller height */
 function updateScrollerHeight(){
   const mobile = window.innerWidth < MOBILE_BP;
   document.documentElement.style.setProperty('--scrollerHeight', (mobile ? MOBILE_VH : SCROLLER_VH) + 'vh');
@@ -237,7 +240,7 @@ const overlays = CARDS.map(card => {
   el.className = `overlay pos-${card.pos}`;
   el.innerHTML = card.html;
   overlaysRoot.appendChild(el);
-  return { el, dxPx:0, widthPct:1, ...card }; // ADDED defaults
+  return { el, dxPx:0, widthPct:1, ...card }; // defaults
 });
 
 /* Helpers */
@@ -248,10 +251,10 @@ function scrollPercent(){
 
 /* Fit into safe column with per-card adjustments */
 function fitOverlay(o){
-  // Keep top/center/bottom overlays exactly where CSS puts them (no scaling/relayout)
+  // Keep top/center/bottom overlays exactly where CSS puts them
   if (o.pos === 'center' || o.pos === 'top' || o.pos === 'bottom'){
-    o.el.style.transform = '';     
-    o.el.style.maxWidth = '90ch';  
+    o.el.style.transform = '';
+    o.el.style.maxWidth = '90ch';
     return;
   }
 
@@ -273,13 +276,13 @@ function fitOverlay(o){
   const colW = Math.max(260, safe.right - safe.left);
   const colH = Math.max(180, vh - insetTop - insetBot);
 
-  /* ADDED: per-card width controls */
+  /* width controls */
   const pct = (o.widthPct==null) ? 1 : Math.max(0.3, Math.min(o.widthPct, 1));
   let desiredW = colW * pct;
   if (o.maxWidthPx) desiredW = Math.min(desiredW, o.maxWidthPx);
 
-  // Horizontal anchor with dxPx nudge (+ toward center)
-  const nudge = o.dxPx || 0; // ADDED
+  // Horizontal anchor (supports optional dxPx)
+  const nudge = o.dxPx || 0;
   if (o.pos === 'right'){
     const baseRight = vw - safe.right;
     o.el.style.left  = '';
@@ -289,21 +292,18 @@ function fitOverlay(o){
     o.el.style.right = '';
   }
 
-  // Reset scale to measure natural size at desired width
+  // Measure and scale to fit height if needed
   o.el.style.transform = 'scale(1)';
   o.el.style.maxWidth = `${Math.round(desiredW)}px`;
   const r = o.el.getBoundingClientRect();
 
-  // Scale to fit height if needed (unchanged behavior)
   const s = Math.max(0.60, Math.min(desiredW / r.width, colH / r.height, 1));
   o.el.style.transform = `scale(${s})`;
 
-  // Vertical anchor: top or centered (with optional nudge)
+  // Vertical placement
   const scaledH = r.height * s;
   let topPx = insetTop;
-  if (o.v === 'mid'){
-    topPx = (vh - scaledH)/2;
-  }
+  if (o.v === 'mid'){ topPx = (vh - scaledH)/2; }
   if (o.dyVh){ topPx += (vh * (o.dyVh/100)); }
   topPx = Math.max(insetTop, Math.min(topPx, vh - insetBot - scaledH));
   o.el.style.top = `${topPx}px`;
@@ -311,9 +311,7 @@ function fitOverlay(o){
 
 /* Opacity models */
 function opacityFor(currF, centerF, halfW, persist, startAtF){
-  // Hard hold-off before startAtF (used for Contact)
   if (startAtF != null && currF < startAtF) return 0;
-
   if (persist){
     const start = startAtF != null ? startAtF : centerF - halfW;
     if (currF <= start) return 0;
@@ -356,7 +354,7 @@ addEventListener('scroll', () => {
   }
 }, {passive:true});
 
-/* ADDED: update scroller height on resize */
+/* Keep mobile scroll height in sync */
 addEventListener('resize', () => {
   updateScrollerHeight();
   overlays.forEach(o => fitOverlay(o));
