@@ -10,18 +10,21 @@
 
 <style>
   :root{
-    /* Typography */
-    --font: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --h1: clamp(28px, 5vw, 60px);
-    --p:  clamp(16px, 2.2vw, 22px);
-    --weight-title: 700; --weight-body: 500;
-    --text: #fff; --muted:#c8c8c8; --shadow: 0 2px 24px rgba(0,0,0,.55);
+    /* Apple-like type */
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display","SF Pro Text",
+            "Helvetica Neue", Helvetica, Arial, Inter, sans-serif;
+    --h1: clamp(26px, 4vw, 44px);
+    --h2: clamp(16px, 2vw, 20px);
+    --p:  clamp(14px, 1.7vw, 18px);
+    --text:#fff; --muted:#c8c8c8; --shadow:0 2px 24px rgba(0,0,0,.55);
 
-    /* Layout / feel */
-    --scrollerHeight: 700vh;                  /* bigger = slower scroll */
-    --fadeMs: 180;                             /* fade speed */
-    --gutter: max(4vw, calc(16px + env(safe-area-inset-left)));
-    --bottom: max(6vh, calc(24px + env(safe-area-inset-bottom)));
+    --scrollerHeight: 700vh;
+
+    /* SAFE COLUMNS (keeps text away from brain) */
+    --side:   max(5vw, 64px);   /* outer padding */
+    --gutter: max(8vw, 120px);  /* central gap from video/brain */
+    --top:    12vh;             /* vertical insets */
+    --bottom: 14vh;
   }
 
   html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:var(--font)}
@@ -30,27 +33,32 @@
   .scroller{height:var(--scrollerHeight);touch-action:pan-y}
 
   .overlay{
-    position:fixed; max-width:min(90ch,90vw);
-    opacity:0; transition:opacity var(--fadeMs)ms ease;
-    pointer-events:none; filter:drop-shadow(var(--shadow));
+    position:fixed; opacity:0; pointer-events:none; filter:drop-shadow(var(--shadow));
+    text-align:left; transform-origin: top left;
   }
-  .overlay.show{opacity:1}
-  .overlay h1{margin:0 0 .35em;font-weight:var(--weight-title);font-size:var(--h1);line-height:1.05}
-  .overlay p, .overlay li{margin:0 0 .35em;font-weight:var(--weight-body);font-size:var(--p);line-height:1.35}
+  .overlay h1{margin:0 0 .35em;font-weight:700;font-size:var(--h1);line-height:1.14}
+  .overlay .mini{margin:.1em 0 .5em;font-weight:600;font-size:var(--h2);color:#eaeaea}
+  .overlay p,.overlay li{margin:0 0 .35em;font-weight:500;font-size:var(--p);line-height:1.45}
   .overlay ul{margin:.25em 0 0 1.1em;padding:0}
+  .muted{color:var(--muted)}
 
-  /* Positions */
-  .pos-left{left:var(--gutter);top:15vh;text-align:left}
-  .pos-right{right:var(--gutter);top:15vh;text-align:right}
-  .pos-center{left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
-  .pos-bottom{left:50%;transform:translateX(-50%);bottom:var(--bottom);text-align:center}
-  @media (max-width:640px){ .pos-left,.pos-right{top:12vh} }
+  /* Horizontal anchors; vertical handled in JS per card */
+  .pos-left{left:var(--side)}
+  .pos-right{right:var(--side)}
+  .pos-bottom{left:50%;transform:translateX(-50%);text-align:center}
+  /* NEW: top-center + full-center for Contact */
+  .pos-top{ left:50%; top:max(6vh,40px); transform:translateX(-50%); text-align:center }
+  .pos-center{ left:50%; top:calc(50% + 38vh); transform:translate(-50%,-50%); text-align:center }
+
+  @media (max-width:720px){
+    .pos-right{right:auto; left:var(--side)}
+    .pos-bottom{left:50%}
+  }
 </style>
 </head>
 <body>
 
 <div id="wrap">
-  <!-- Make sure the file is at the repo root and named exactly brain.mp4 -->
   <video id="vid" muted playsinline preload="auto" src="brain.mp4"></video>
 </div>
 
@@ -58,144 +66,263 @@
 <div class="scroller"></div>
 
 <script>
-/* ===================== CONFIG ===================== */
-/* your video has 0001–0838 → 838 frames total */
-const TOTAL_FRAMES       = 838;  // change if your video length differs
-const SHOW_WIDTH_FRAMES  = 6;    // half-window around each trigger (0 = single frame)
-const SCROLLER_VH        = 700;  // page height → scroll speed
+/* ============== CONFIG ============== */
+const TOTAL_FRAMES = 838;
+const BASE_FADE    = 24;
+const SCROLLER_VH  = 700;
 
-// Triggers (center frames you gave)
 const TRIG = {
   intro:       0,
   frontal:     99,
-  parietal:    179,
-  occipital:   264,
-  temporal:    360,
+  parietal:    180,
+  occipital:   265,
+  temporal:    365,
   cerebellum:  519,
   brainstem:   629,
-  closeout:    695           // set INCLUDE_CLOSE=false to hide
+  contact:     691 // contact begins here (per your request)
 };
 
-// include the final contact card?
-const INCLUDE_CLOSE = true;
-
-/* ====== Overlay content (edit copy / formatting here) ====== */
+/* Card options:
+   pos: 'left' | 'right' | 'bottom' | 'top' | 'center'
+   v: 'top' | 'mid'          (vertical anchor; 'mid' centers the card vertically)
+   dyVh: number              (extra vertical nudge in vh; + pushes lower)
+   gutterShiftPx: number     (moves toward center by shrinking the gutter)
+   wider: true               (slightly increase column width while keeping safe gutter)
+   startAtF: number          (opacity = 0 before this frame)
+   persist: true             (stick at 1 after fading in)
+*/
 const CARDS = [
-  // Intro: left + right together at frame 0
-  { pos:'left',  frame: TRIG.intro, html:`<h1>Arjun Bedi</h1><p class="muted">Ottawa, ON • Interactive CV</p>` },
-  { pos:'right', frame: TRIG.intro, html:`<h1>Interactive CV</h1><p class="muted">scroll to explore</p>` },
+  // Intro — lower middle, both sides
+  { pos:'left',  v:'mid', dyVh: 0,  frame: TRIG.intro, widthF: 30,
+    html:`<h1>Arjun Bedi</h1><p class="muted">Ottawa, ON</p>` },
+  { pos:'right', v:'mid', dyVh: 0,  frame: TRIG.intro, widthF: 30,
+    html:`<h1>Interactive CV</h1><p class="muted">Scroll</p>` },
 
-  // Frontal — Research & planning
-  { pos:'left', frame: TRIG.frontal, html: `
-    <h1>Frontal — Research & Planning</h1>
-    <ul>
-      <li>Directed Research Student, <em>VisCoRe Lab</em> (Fall 2025)</li>
-      <li>Visual token variation &amp; biological motion: design → testing → analysis → write-up</li>
-    </ul>` },
+  // Frontal — right, slightly lower & a touch toward center
+  { pos:'right', v:'mid', dyVh: 0, gutterShiftPx: 28, frame: 99, widthF: 28,
+    html: `
+      <h1>Frontal Lobe - Planning &amp; Problem-Solving</h1>
+      <div class="mini">Research Experience</div>
+      <p><strong>Visual Cognition Research Lab (VisCoRe), University of Ottawa</strong></p>
+      <p><em>Directed Research Student (Upcoming Fall Term 2025)</em></p>
+      <ul>
+        <li>Accepted into a directed research project investigating the Effects of Visual Token Variation on the Perception of Biological Motion.</li>
+        <li>Will be responsible for project conception, experimental setup, participant testing, data analysis, and report writing.</li>
+        <li>Anticipated development of skills in experimental design, statistical analysis, and interpretation using R and SPSS.</li>
+      </ul>
+    `
+  },
 
-  // Parietal — Quant & methods
-  { pos:'right', frame: TRIG.parietal, html: `
-    <h1>Parietal — Quant & Methods</h1>
-    <ul>
-      <li>R &amp; SPSS (ANOVA, regression)</li>
-      <li>Research Methods • Statistics • Cognitive/Perception coursework</li>
-    </ul>` },
+  // Parietal — opposite side (left), closer to middle both axes
+  { pos:'left', v:'mid', dyVh: 0, gutterShiftPx: 36, frame: 180, widthF: 28,
+    html: `
+      <h1>Parietal Lobe - Sensory Input</h1>
+      <div class="mini">Technical &amp; Research Skills</div>
+      <ul>
+        <li>Proficient in R and SPSS for data management, ANOVA, regression, and visualization.</li>
+        <li>Skilled in Microsoft Office Suite (Word, Excel, PowerPoint).</li>
+        <li>Basic experience with Blender for 3D modeling, animation, and visualization.</li>
+        <li>Introductory experience with HTML/CSS/JavaScript for interactive projects. Comfortable learning new programming tools.</li>
+        <li>Coursework: Quantitative Methods I &amp; II, Research Methods, Psychometric Methods, Behavioural Neuroscience, Perception among other upper-year Psychology courses.</li>
+      </ul>
+    `
+  },
 
-  // Occipital — Vision & design
-  { pos:'left', frame: TRIG.occipital, html: `
-    <h1>Occipital — Vision & Design</h1>
-    <ul>
-      <li>Visual cognition focus; Blender for visualization</li>
-    </ul>` },
+  // Occipital — opposite side (right), centered
+  { pos:'right', v:'mid', dyVh: 0, gutterShiftPx: 36, frame: 265, widthF: 26,
+    html: `
+      <h1>Occipital Lobe</h1>
+      <div class="mini">Extracurricular Activities</div>
+      <ul>
+        <li>Competitive rugby experience with high school and club teams, including Kingston Panthers and Ottawa Irish Rugby Club. Developed teamwork, discipline, and resilience through training and competition.</li>
+        <li>Selected and trained as a Counsellor-in-Training (CIT) at RKY Camp, building skills in mentorship, teamwork, and youth engagement.</li>
+      </ul>
+    `
+  },
 
-  // Temporal — Clinical & communication
-  { pos:'right', frame: TRIG.temporal, html: `
-    <h1>Temporal — Clinical & Communication</h1>
-    <ul>
-      <li>Instructor Therapist, Aspen ABA (Jan–Apr 2024)</li>
-      <li>Volunteer, Memory Care (Jan 2024–present)</li>
-      <li>Languages: English • Hindi • Punjabi</li>
-    </ul>` },
+  // Temporal — switch side (left) and make a bit wider
+  { pos:'left', v:'mid', dyVh: -2, gutterShiftPx: 48, wider:true, frame: 365, widthF: 30,
+    html: `
+      <h1>Temporal Lobe - Memory &amp; Communication</h1>
+      <div class="mini">Volunteer Experience</div>
+      <p><strong>Research Volunteer, Visual Cognition Research Lab (VisCoRe), University of Ottawa</strong> - <em>May 2025 - Aug 2025</em></p>
+      <ul>
+        <li>Assisted a PhD researcher in studies on biological motion perception under visual manipulations.</li>
+        <li>Recruited and scheduled participants, prepared experimental materials, and supported data collection during pilot testing sessions.</li>
+        <li>Conducted preliminary statistical analyses (ANOVA, regression) using R and SPSS to evaluate experimental outcomes.</li>
+        <li>Gained hands-on exposure to the research process while strengthening technical and collaborative skills in a cognitive neuroscience setting.</li>
+      </ul>
+      <p><strong>Dining Room Host, Memory Care Home Area, The Glebe Centre, Ottawa</strong> - <em>Jan 2024 - Present</em></p>
+      <ul>
+        <li>Provide dining assistance and emotional support to residents in a memory care unit, fostering a safe and positive environment.</li>
+        <li>Engage residents in meaningful interactions to promote well-being and comfort.</li>
+        <li>Collaborate with staff to ensure individualized care and attention tailored to resident needs.</li>
+      </ul>
+    `
+  },
 
-  // Cerebellum — Care, coordination & discipline
-  { pos:'left', frame: TRIG.cerebellum, html: `
-    <h1>Cerebellum — Care & Coordination</h1>
-    <ul>
-      <li>Behavioural Counsellor, Bairncroft (Mar 2025–present)</li>
-      <li>Rugby: Kingston Panthers • Ottawa Irish; former football</li>
-    </ul>` },
+  // Cerebellum — switch side (right) and a bit wider
+  { pos:'right', v:'mid', dyVh: 0, gutterShiftPx: 48, wider:true, frame: 519, widthF: 30,
+    html: `
+      <h1>Cerebellum - Coordination &amp; Balance</h1>
+      <div class="mini">Professional &amp; Applied Experience</div>
+      <p><strong>Behavioural Counsellor, Bairncroft Residential Services, Ottawa</strong> - <em>Mar 2025 - Present</em></p>
+      <ul>
+        <li>Provide behavioural and emotional support to residents in a group home fostering daily living skills and independence.</li>
+        <li>Implement individualized support plans, monitor progress, and adjust approaches in collaboration with a team.</li>
+        <li>Maintain detailed documentation and progress reports to support continuity of care and treatment.</li>
+        <li>Strengthened crisis management, communication, and problem-solving skills in a fast paced environment.</li>
+      </ul>
+      <p><strong>Instructor Therapist, Aspen ABA Services, Ottawa</strong> - <em>Jan 2024 - May 2024</em></p>
+      <ul>
+        <li>Delivered one-on-one Applied Behaviour Analysis (ABA) therapy sessions under clinical supervision.</li>
+        <li>Implemented prescribed behaviour intervention plans tailored to client needs and developmental goals.</li>
+        <li>Collected and tracked behavioural data to measure progress.</li>
+        <li>Gained experience working closely with families and healthcare professionals to ensure consistent therapeutic support.</li>
+      </ul>
+    `
+  },
 
-  // Brainstem — Core facts
-  { pos:'right', frame: TRIG.brainstem, html: `
-    <h1>Brainstem — Core Facts</h1>
-    <ul>
-      <li>Honours B.A. Psychology, uOttawa (exp. May 2026)</li>
-      <li>Upper-Year GPA 8.3/10; CGPA 7.1/10 (proj. 7.5)</li>
-    </ul>` },
+  // Brainstem — keep right, lower & more centered
+  { pos:'right', v:'mid', dyVh: 0, gutterShiftPx: 40, frame: 629, widthF: 22,
+    html: `
+      <h1>Brainstem - Vitals</h1>
+      <div class="mini">Education &amp; Languages</div>
+      <ul>
+        <li><strong>University of Ottawa</strong> - Honours B.A. Psychology (Expected May 2026)</li>
+        <li>CGPA 7.2/10 (Upper year GPA: 7.9/10)</li>
+        <li>Dean's List 2025 Winter Term</li>
+      </ul>
+      <ul>
+        <li>English (Native)</li>
+        <li>Hindi (Fluent)</li>
+        <li>Punjabi (Fluent)</li>
+      </ul>
+    `
+  },
+
+  /* CONTACT — starts at 691, heading at top-center, info centered; both persist */
+  { pos:'center', v:'mid', startAtF: TRIG.contact, persist:true, frame: TRIG.contact+10, widthF: 6,
+    html:`<p>bediarj02@gmail.com • abedi087@uottawa.ca • (613) 883-3843</p>` }
 ];
 
-// Optional close-out card
-if (INCLUDE_CLOSE){
-  CARDS.push({
-    pos:'bottom', frame: TRIG.closeout,
-    html:`<h1>Contact</h1><p>bediarj02@gmail.com • +1 (###) ###-####</p>`
-  });
-}
-/* ================================================== */
-
 document.documentElement.style.setProperty('--scrollerHeight', SCROLLER_VH + 'vh');
+/* ===================================== */
 
 const vid = document.getElementById('vid');
 const overlaysRoot = document.getElementById('overlays');
+const css = getComputedStyle(document.documentElement);
 
-// Convert a frame index to time (sec) once metadata is known
-let duration = 0;
-const fToTime = f => (duration ? (f / (TOTAL_FRAMES - 1)) * duration : 0);
-
-// Build overlay nodes
+/* Build overlays */
 const overlays = CARDS.map(card => {
   const el = document.createElement('div');
   el.className = `overlay pos-${card.pos}`;
   el.innerHTML = card.html;
   overlaysRoot.appendChild(el);
-  return {
-    el,
-    centerF: card.frame,
-    startF: Math.max(0, card.frame - SHOW_WIDTH_FRAMES),
-    endF:   Math.min(TOTAL_FRAMES-1, card.frame + SHOW_WIDTH_FRAMES)
-  };
+  return { el, ...card };
 });
 
+/* Helpers */
 function scrollPercent(){
   const max = document.body.scrollHeight - window.innerHeight;
   return max>0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
 }
 
-let metaReady = false;
-function onMeta(){ metaReady = true; duration = vid.duration || 0; paintFirstFrame(); }
-if (vid.readyState >= 1) onMeta(); else vid.addEventListener('loadedmetadata', onMeta, {once:true});
+/* Fit into safe column with per-card adjustments */
+function fitOverlay(o){
+  // Keep top/center/bottom overlays exactly where CSS puts them (no scaling/relayout)
+  if (o.pos === 'center' || o.pos === 'top' || o.pos === 'bottom'){
+    o.el.style.transform = '';     // let the class transform apply
+    o.el.style.maxWidth = '90ch';  // sensible width cap for readability
+    return;
+  }
 
-function paintFirstFrame(){
-  try{ vid.currentTime = 0.001; }catch(e){}
-  vid.pause();
+  const vw = innerWidth, vh = innerHeight;
+  const baseSide   = parseFloat(css.getPropertyValue('--side'))   || 64;
+  const baseGutter = parseFloat(css.getPropertyValue('--gutter')) || 120;
+  const insetTop   = parseFloat(css.getPropertyValue('--top'))    || vh*0.12;
+  const insetBot   = parseFloat(css.getPropertyValue('--bottom')) || vh*0.14;
+
+  const minGutter = Math.max(100, vw*0.06);
+  let gutter = Math.max(minGutter, baseGutter - (o.gutterShiftPx||0));
+  if (o.wider) gutter = Math.max(minGutter, gutter * 0.85); // widen a bit but keep safe
+
+  const mid = vw/2;
+  const safe = (o.pos === 'right')
+    ? { left: mid + gutter, right: vw - baseSide }
+    : { left: baseSide,     right: mid - gutter };
+
+  const colW = Math.max(260, safe.right - safe.left);
+  const colH = Math.max(180, vh - insetTop - insetBot);
+
+  // Horizontal anchor
+  if (o.pos === 'right'){
+    o.el.style.left  = '';
+    o.el.style.right = `${vw - safe.right}px`;
+  } else {
+    o.el.style.left  = `${safe.left}px`;
+    o.el.style.right = '';
+  }
+
+  // Reset scale to measure natural size
+  o.el.style.transform = 'scale(1)';
+  o.el.style.maxWidth = `${colW}px`;
+  const r = o.el.getBoundingClientRect();
+
+  // Scale factor to fit both width & height
+  const s = Math.max(0.60, Math.min(colW / r.width, colH / r.height, 1));
+  o.el.style.transform = `scale(${s})`;
+
+  // Vertical anchor: top or centered (with optional nudge)
+  const scaledH = r.height * s;
+  let topPx = insetTop;
+  if (o.v === 'mid'){
+    topPx = (vh - scaledH)/2;
+  }
+  if (o.dyVh){ topPx += (vh * (o.dyVh/100)); }
+  topPx = Math.max(insetTop, Math.min(topPx, vh - insetBot - scaledH));
+  o.el.style.top = `${topPx}px`;
 }
 
-// Throttled scroll → set currentTime, toggle overlays
+/* Opacity models */
+function opacityFor(currF, centerF, halfW, persist, startAtF){
+  // Hard hold-off before startAtF (used for Contact)
+  if (startAtF != null && currF < startAtF) return 0;
+
+  if (persist){
+    const start = startAtF != null ? startAtF : centerF - halfW;
+    if (currF <= start) return 0;
+    if (currF >= centerF) return 1;
+    const t = (currF - start) / (centerF - start);
+    return t<0?0: t>1?1: t;
+  } else {
+    const d = Math.abs(currF - centerF);
+    if (d >= halfW) return 0;
+    return 1 - (d / halfW);
+  }
+}
+
+/* Init video */
+let duration = 0, metaReady=false;
+function onMeta(){ metaReady = true; duration = vid.duration || 0; try{ vid.currentTime = 0.001; }catch(e){} vid.pause(); }
+if (vid.readyState >= 1) onMeta(); else vid.addEventListener('loadedmetadata', onMeta, {once:true});
+
+/* Scroll handler */
 let ticking = false;
-window.addEventListener('scroll', () => {
+addEventListener('scroll', () => {
   if (!ticking){
     requestAnimationFrame(() => {
       const t = scrollPercent();
       if (metaReady && duration){
-        const targetTime = t * Math.max(duration - 0.001, 0);
-        vid.currentTime = targetTime;
-
-        // compute current frame for crisp frame-window logic
-        const currF = Math.round((targetTime / duration) * (TOTAL_FRAMES - 1));
+        const ct = t * Math.max(duration - 0.001, 0);
+        vid.currentTime = ct;
+        const currF = Math.round((ct / duration) * (TOTAL_FRAMES - 1));
 
         overlays.forEach(o => {
-          const on = currF >= o.startF && currF <= o.endF;
-          o.el.classList.toggle('show', on);
+          const a = opacityFor(currF, o.frame, o.widthF ?? BASE_FADE, o.persist, o.startAtF);
+          const eased = a * a * (3 - 2 * a);
+          o.el.style.opacity = eased.toFixed(3);
+          if (eased > 0.02) fitOverlay(o);
         });
       }
       ticking = false;
@@ -204,10 +331,13 @@ window.addEventListener('scroll', () => {
   }
 }, {passive:true});
 
-// iOS URL-bar changes handled by 100svh in CSS
-window.addEventListener('resize', () => {});
+addEventListener('resize', () => overlays.forEach(o => fitOverlay(o)));
 </script>
 </body>
 </html>
+
+
+
+
 
 
